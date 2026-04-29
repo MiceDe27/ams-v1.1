@@ -4,6 +4,7 @@ const Tenant = require('../models/tenant');
 
 const tenantResolver = async (req, res, next) => {
     const authHeader = req.headers.authorization;
+    const headerTenantId = req.headers['x-tenant-id']; 
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: "Unauthorized: Token missing" });
@@ -13,53 +14,19 @@ const tenantResolver = async (req, res, next) => {
 
     try {
         const decodedToken = await admin.auth().verifyIdToken(token);
-
-        // Primary path: tenantId is stored as a Firebase custom claim.
-        // Fallback path: resolve tenant by Firebase uid (useful before the client refreshes token claims).
-        let tenantId = decodedToken.tenantId;
-        if (!tenantId) {
-            let tenantByUid = await Tenant.findOne({ adminUid: decodedToken.uid, status: 'active' });
-
-            // If there is no tenant yet, auto-provision one so the app can function.
-            // This avoids hard 403s on fresh environments where no tenant was registered.
-            if (!tenantByUid) {
-                const provisionalTenantId = decodedToken.uid;
-                tenantByUid = await Tenant.findOneAndUpdate(
-                    { adminUid: decodedToken.uid },
-                    {
-                        $setOnInsert: {
-                            tenantId: provisionalTenantId,
-                            companyName: decodedToken.name || decodedToken.email || 'Default Tenant',
-                            adminUid: decodedToken.uid,
-                            status: 'active',
-                            plan: 'basic',
-                        },
-                    },
-                    { upsert: true, returnDocument: 'after' }
-                );
-            }
-
-            if (tenantByUid?.tenantId) {
-                tenantId = tenantByUid.tenantId;
-                // Best-effort: persist the claim so future tokens include tenantId.
-                admin.auth().setCustomUserClaims(decodedToken.uid, { tenantId }).catch(() => {});
-            }
-        }
+        
+        let tenantId = decodedToken.tenantId || headerTenantId || decodedToken.uid;
 
         if (!tenantId) {
-            return res.status(403).json({ error: "Forbidden: User has no assigned tenant" });
+            return res.status(403).json({ error: "Forbidden: No tenant identifier found" });
         }
 
-        const tenantInfo = await Tenant.findOne({ tenantId, status: 'active' });
-        if (!tenantInfo) {
-            return res.status(403).json({ error: "Forbidden: Tenant account is inactive or deleted" });
-        }
-
-        const tenantDb = mongoose.connection.useDb(`db_${tenantId}`, { useCache: true });
+        const dbName = `db_${tenantId.replace(/[^a-zA-Z0-9]/g, "_")}`;
+        const tenantDb = mongoose.connection.useDb(dbName, { useCache: true });
         
         req.tenantDb = tenantDb;
-        req.tenantInfo = tenantInfo;
         req.user = decodedToken; 
+        req.tenantId = tenantId;
 
         next();
     } catch (err) {
