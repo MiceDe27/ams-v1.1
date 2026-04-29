@@ -17,7 +17,7 @@ const app = express();
 
 app.use(cors({
     origin: [
-        process.env.FRONTEND_URL || 'http://localhost:5173', 
+        'http://localhost:5173', 
         'capacitor://localhost', 
         'http://localhost'
     ],
