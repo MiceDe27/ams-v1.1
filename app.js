@@ -18,8 +18,9 @@ const app = express();
 app.use(cors({
     origin: [
         'http://localhost:5173', 
-        'capacitor://localhost', 
-        'http://localhost'
+        'capacitor://localhost',
+        'http://localhost',
+        'https://localhost/'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
